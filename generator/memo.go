@@ -38,11 +38,12 @@ func (er *ErrRender) Unwrap() error {
 }
 
 type Memo struct {
+	ID      string
 	Meta    *Frontmatter
 	Content string
 }
 
-func ParseMemo(v string) (*Memo, error) {
+func ParseMemo(id, v string) (*Memo, error) {
 	parts := strings.SplitN(v, "---", 3)
 	if len(parts) < 2 {
 		return nil, &ErrParse{cause: ErrMissingMeta}
@@ -53,7 +54,7 @@ func ParseMemo(v string) (*Memo, error) {
 		return nil, &ErrParse{cause: fmt.Errorf("frontmatter - %w", err)}
 	}
 
-	return &Memo{Meta: fm, Content: parts[2]}, nil
+	return &Memo{ID: id, Meta: fm, Content: parts[2]}, nil
 }
 
 func formatExcerpt(content string) string {
@@ -79,10 +80,10 @@ func (m *Memo) Generate() (string, error) {
 
 	var buf bytes.Buffer
 	err = memoTemplate.Execute(&buf, memoTemplateData{
-		Title:           m.Meta.Title,
-		Timestamp:       m.Meta.Timestamp.Format(time.DateOnly),
-		Excerpt:         exc,
-		ContentRendered: template.HTML(contentBuf.String()),
+		Title:     m.Meta.Title,
+		Timestamp: m.Meta.Timestamp.Format(time.DateOnly),
+		Excerpt:   exc,
+		Content:   template.HTML(contentBuf.String()),
 	})
 	if err != nil {
 		return "", &ErrRender{cause: fmt.Errorf("template - %w", err)}

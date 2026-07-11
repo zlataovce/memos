@@ -37,7 +37,14 @@ func main() {
 	}
 }
 
-func generate(_ context.Context, cmd *cli.Command) error {
+type generationContext struct {
+	context.Context
+
+	outDir string
+	memos  []*generator.Memo
+}
+
+func generate(cmdCtx context.Context, cmd *cli.Command) error {
 	outDir := filepath.Clean(cmd.String("out"))
 	if err := os.MkdirAll(outDir, 0755); err != nil {
 		return err
@@ -48,16 +55,27 @@ func generate(_ context.Context, cmd *cli.Command) error {
 		inputFiles = []string{"memos"}
 	}
 
+	ctx := &generationContext{Context: cmdCtx, outDir: outDir}
 	for _, file := range inputFiles {
-		if err := processPath(file, outDir); err != nil {
+		if err := ctx.processPath(file); err != nil {
 			return fmt.Errorf("failed to process path %s: %w", file, err)
 		}
+	}
+
+	index, err := generator.GenerateIndex(ctx.memos)
+	if err != nil {
+		return err
+	}
+
+	err = os.WriteFile(filepath.Join(outDir, "index.html"), []byte(index), 0644)
+	if err != nil {
+		return err
 	}
 
 	return nil
 }
 
-func processPath(inFile, outDir string) error {
+func (ctx *generationContext) processPath(inFile string) error {
 	inFile = filepath.Clean(inFile)
 
 	stat, err := os.Stat(inFile)
@@ -74,13 +92,13 @@ func processPath(inFile, outDir string) error {
 				return nil // skip root
 			}
 
-			return processPath(path, outDir)
+			return ctx.processPath(path)
 		})
 		if err != nil {
 			return err
 		}
 	} else {
-		if err := processFile(inFile, outDir); err != nil {
+		if err := ctx.processFile(inFile); err != nil {
 			return fmt.Errorf("failed to process file %s: %w", inFile, err)
 		}
 	}
@@ -88,22 +106,25 @@ func processPath(inFile, outDir string) error {
 	return nil
 }
 
-func processFile(inFile, outDir string) error {
+func (ctx *generationContext) processFile(inFile string) error {
 	in, err := os.ReadFile(inFile)
 	if err != nil {
 		return err
 	}
 
-	memo, err := generator.ParseMemo(string(in))
+	id := strings.TrimSuffix(filepath.Base(inFile), filepath.Ext(inFile))
+
+	memo, err := generator.ParseMemo(id, string(in))
 	if err != nil {
 		return err
 	}
+
+	ctx.memos = append(ctx.memos, memo)
 
 	out, err := memo.Generate()
 	if err != nil {
 		return err
 	}
 
-	name := strings.TrimSuffix(filepath.Base(inFile), filepath.Ext(inFile))
-	return os.WriteFile(filepath.Join(outDir, name+".html"), []byte(out), 0644)
+	return os.WriteFile(filepath.Join(ctx.outDir, id+".html"), []byte(out), 0644)
 }
